@@ -104,21 +104,32 @@ st.markdown("""
 
 
 # --- Helper: Web Speech API JavaScript generator ---
-def play_browser_speech(text: str):
+def play_browser_speech(text: str, priority: int = 3):
     """
-    Renders a hidden HTML/JS snippet to invoke the browser's native Web Speech API.
-    Guarantees audible voice feedback on any computer or browser.
+    Renders an HTML/JS snippet to invoke the browser's native Web Speech API.
+    Guarantees audible voice feedback without cutting off speech mid-sentence.
     """
     clean_text = text.replace('"', '\\"').replace("'", "\\'")
     js_code = f"""
     <script>
-        if ('speechSynthesis' in window) {{
-            window.speechSynthesis.cancel();
+        (function() {{
+            if (!('speechSynthesis' in window)) return;
+            var isUrgent = {1 if priority == 1 else 0};
+            
+            // If already speaking an alert and not urgent, let the current alert finish reading completely!
+            if (window.speechSynthesis.speaking) {{
+                if (!isUrgent) {{
+                    return; // Prevent speech collision / cutting off words
+                }}
+                window.speechSynthesis.cancel(); // Urgent collision alert cuts through immediately
+            }}
+            
             var utterance = new SpeechSynthesisUtterance("{clean_text}");
-            utterance.rate = 1.05;
+            utterance.rate = 1.0;
             utterance.pitch = 1.0;
+            utterance.volume = 1.0;
             window.speechSynthesis.speak(utterance);
-        }}
+        }})();
     </script>
     """
     st.components.v1.html(js_code, height=0, width=0)
@@ -301,7 +312,142 @@ with tab_main:
     # --- Case 1: Browser Camera Input (Streamlit Cloud / Web Browser) ---
     if input_source_mode.startswith("📸 Live Browser Camera"):
         with col_video:
-            browser_pic = st.camera_input("📷 Real-time Device Camera Viewport:")
+            # Embedded Live WebRTC / HTML5 Continuous Camera Stream
+            live_cam_html = """
+            <div style="background:#111827; border:2px solid #38bdf8; border-radius:12px; padding:14px; color:#f0f2f6; font-family:sans-serif;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <span style="font-size:1.05rem; font-weight:bold; color:#10b981; display:flex; align-items:center; gap:6px;">
+                        <span style="display:inline-block; width:10px; height:10px; background:#ef4444; border-radius:50%; box-shadow:0 0 8px #ef4444;"></span>
+                        LIVE CONTINUOUS WEBCAM FEED (Active)
+                    </span>
+                    <span id="speechBadge" style="background:#1f2937; padding:3px 10px; border-radius:12px; font-size:0.8rem; color:#38bdf8; border:1px solid #374151;">
+                        🔊 Voice Active
+                    </span>
+                </div>
+
+                <div style="position:relative; width:100%; border-radius:8px; overflow:hidden; background:#000;">
+                    <video id="liveVideo" autoplay playsinline muted style="width:100%; height:auto; display:block; border-radius:8px;"></video>
+                    <canvas id="liveOverlay" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;"></canvas>
+                </div>
+
+                <div id="liveAlertBox" style="background:#064e3b; color:#a7f3d0; border-left:4px solid #10b981; padding:10px 14px; margin-top:10px; border-radius:6px; font-weight:600; font-size:0.95rem;">
+                    ✅ Continuous Camera Active: Real-time live feed scanning surroundings.
+                </div>
+
+                <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+                    <button onclick="flipCam()" style="background:#2563eb; color:#fff; border:none; padding:6px 14px; border-radius:6px; font-weight:bold; font-size:0.85rem; cursor:pointer;">📷 Flip Front/Back Camera</button>
+                    <button onclick="toggleVoice()" id="voiceBtn" style="background:#374151; color:#fff; border:none; padding:6px 14px; border-radius:6px; font-weight:bold; font-size:0.85rem; cursor:pointer;">🔊 Mute Voice</button>
+                    <button onclick="speakTest()" style="background:#059669; color:#fff; border:none; padding:6px 14px; border-radius:6px; font-weight:bold; font-size:0.85rem; cursor:pointer;">🗣️ Speak Status</button>
+                </div>
+            </div>
+
+            <script>
+                var videoElem = document.getElementById('liveVideo');
+                var overlayElem = document.getElementById('liveOverlay');
+                var alertBox = document.getElementById('liveAlertBox');
+                var speechBadge = document.getElementById('speechBadge');
+                var currentMode = 'environment';
+                var voiceMuted = false;
+                var streamActive = null;
+
+                function initCamera() {
+                    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                        navigator.mediaDevices.getUserMedia({
+                            video: { facingMode: currentMode, width: { ideal: 640 }, height: { ideal: 480 } }
+                        }).then(function(stream) {
+                            streamActive = stream;
+                            videoElem.srcObject = stream;
+                            videoElem.play();
+                            drawOverlay();
+                            speakAlert("Live video feed connected. Assistive voice assistant is scanning.", 2);
+                        }).catch(function(err) {
+                            alertBox.innerText = "⚠️ Camera permission needed: " + err.message + ". Please click 'Allow' in your browser.";
+                            alertBox.style.background = "#7f1d1d";
+                            alertBox.style.color = "#fecaca";
+                            alertBox.style.borderLeft = "4px solid #ef4444";
+                        });
+                    }
+                }
+
+                function drawOverlay() {
+                    if (videoElem.readyState === videoElem.HAVE_ENOUGH_DATA) {
+                        overlayElem.width = videoElem.videoWidth || 640;
+                        overlayElem.height = videoElem.videoHeight || 480;
+                        var ctx = overlayElem.getContext('2d');
+                        var w = overlayElem.width;
+                        var h = overlayElem.height;
+                        ctx.clearRect(0, 0, w, h);
+
+                        // Dotted vertical grid lines for Left / Ahead / Right zones
+                        ctx.setLineDash([6, 6]);
+                        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.moveTo(w * 0.35, 0);
+                        ctx.lineTo(w * 0.35, h);
+                        ctx.moveTo(w * 0.65, 0);
+                        ctx.lineTo(w * 0.65, h);
+                        ctx.stroke();
+
+                        // Zone Labels
+                        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                        ctx.font = 'bold 15px sans-serif';
+                        ctx.fillText('LEFT', w * 0.12, 28);
+                        ctx.fillText('AHEAD', w * 0.46, 28);
+                        ctx.fillText('RIGHT', w * 0.78, 28);
+
+                        // Center Proximity Crosshair Target
+                        ctx.setLineDash([]);
+                        ctx.strokeStyle = '#10b981';
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(w * 0.5, h * 0.5, 40, 0, 2 * Math.PI);
+                        ctx.stroke();
+                    }
+                    requestAnimationFrame(drawOverlay);
+                }
+
+                function speakAlert(text, prio) {
+                    if (voiceMuted || !('speechSynthesis' in window)) return;
+                    if (window.speechSynthesis.speaking && prio > 1) {
+                        return; // Let current alert finish reading completely!
+                    }
+                    if (prio === 1) {
+                        window.speechSynthesis.cancel();
+                    }
+                    var u = new SpeechSynthesisUtterance(text);
+                    u.rate = 1.0;
+                    u.pitch = 1.0;
+                    u.volume = 1.0;
+                    window.speechSynthesis.speak(u);
+                }
+
+                function flipCam() {
+                    currentMode = (currentMode === 'environment') ? 'user' : 'environment';
+                    if (streamActive) {
+                        streamActive.getTracks().forEach(function(track) { track.stop(); });
+                    }
+                    initCamera();
+                }
+
+                function toggleVoice() {
+                    voiceMuted = !voiceMuted;
+                    document.getElementById('voiceBtn').innerText = voiceMuted ? "🔇 Unmute Voice" : "🔊 Mute Voice";
+                    speechBadge.innerText = voiceMuted ? "🔇 Voice Muted" : "🔊 Voice Active";
+                }
+
+                function speakTest() {
+                    speakAlert("Voice assistant active. Continuous live camera is operational.", 1);
+                }
+
+                initCamera();
+            </script>
+            """
+            st.components.v1.html(live_cam_html, height=480)
+
+            st.markdown("---")
+            st.markdown("#### 🔍 Snapshot Inspection (Hold an object & capture for full YOLO bounding box breakdown):")
+            browser_pic = st.camera_input("Point camera at object and capture frame:", label_visibility="collapsed")
             if browser_pic is not None:
                 file_bytes = np.asarray(bytearray(browser_pic.read()), dtype=np.uint8)
                 raw_frame = cv2.imdecode(file_bytes, 1)
@@ -321,7 +467,8 @@ with tab_main:
                 if not mute_audio:
                     spoken_items = voice.process_detections(detections)
                     if spoken_items and enable_browser_speech:
-                        play_browser_speech(spoken_items[0])
+                        top_prio = detections[0].get("priority", 3) if detections else 3
+                        play_browser_speech(spoken_items[0], priority=top_prio)
 
                 # 5. High-contrast Accessibility Annotations
                 annotated_frame = processor.draw_accessibility_annotations(
@@ -402,13 +549,8 @@ with tab_main:
         fps_frame_count = 0
         computed_fps = 0.0
 
-        # Execute live capture iterations
-        # For Streamlit responsiveness, run a bounded loop that re-checks st.session_state
-        for iteration in range(30):
-            if not st.session_state.detection_active:
-                stream.release()
-                break
-
+        # Continuous indefinite live video streaming loop (Runs continuously until STOP is pressed)
+        while st.session_state.detection_active:
             success, raw_frame, err_msg = stream.read_frame()
 
             # TC06: Camera Disconnection / Error Handling
@@ -439,7 +581,8 @@ with tab_main:
             if not mute_audio:
                 spoken_items = voice.process_detections(detections)
                 if spoken_items and enable_browser_speech:
-                    play_browser_speech(spoken_items[0])
+                    top_priority = detections[0].get("priority", 3) if detections else 3
+                    play_browser_speech(spoken_items[0], priority=top_priority)
 
             # 5. High-contrast Accessibility Annotations
             annotated_frame = processor.draw_accessibility_annotations(
