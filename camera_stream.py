@@ -73,6 +73,8 @@ class CameraStream:
         TC06: Returns (False, None, "Camera disconnected") when camera fails.
         """
         if self.source_type.startswith("test_scene_"):
+            if not self.is_connected:
+                return False, None, "Stream released / stopped."
             scene_name = self.source_type.replace("test_scene_", "")
             frame = self.generate_synthetic_test_frame(scene_name)
             return True, frame, ""
