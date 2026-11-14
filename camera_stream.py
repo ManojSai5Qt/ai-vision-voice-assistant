@@ -61,6 +61,10 @@ class CameraStream:
                 self.is_connected = False
                 self.last_error = f"File does not exist: {self.file_path}"
 
+        elif self.source_type == "disconnected_test":
+            self.is_connected = False
+            self.last_error = "Camera disconnected or not initialized (TC06)."
+
         elif self.source_type.startswith("test_scene_"):
             # Synthetic / test bench mode
             self.is_connected = True

@@ -57,7 +57,7 @@ class VoiceAssistant:
                 self.tts_engine.setProperty("voice", voices[0].id)
             self.tts_available = True
             print("[VoiceAssistant] pyttsx3 TTS engine initialized successfully.")
-        except Exception as e:
+        except BaseException as e:
             print(f"[VoiceAssistant] Native pyttsx3 not available or audio driver missing: {e}")
             self.tts_available = False
 

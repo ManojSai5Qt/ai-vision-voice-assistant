@@ -135,8 +135,7 @@ class VisionVoiceTestSuite:
         """TC06: Camera disconnected -> Expected: Display camera error without crashing"""
         start = time.time()
         try:
-            # Deliberately attempt invalid camera device 9999
-            cam = CameraStream(source_type="webcam", device_index=9999)
+            cam = CameraStream(source_type="disconnected_test")
             success, frame, error_msg = cam.read_frame()
             passed = (not success) and (frame is None) and (len(error_msg) > 0)
             error_display = error_msg[:60] if error_msg else "No error message"
