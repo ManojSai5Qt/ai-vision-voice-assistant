@@ -462,43 +462,74 @@ elif input_source_mode.startswith("📁"):
     uploaded_file = st.sidebar.file_uploader("Upload Image or MP4", type=["jpg", "jpeg", "png", "mp4"])
 
 # ==============================================================================
-# SIDEBAR: 99% MULTIMODAL VISION AI (CLAUDE 3.5 SONNET)
+# SIDEBAR: 99% MULTIMODAL VISION AI (ZERO-KEY & CLOUD MODES)
 # ==============================================================================
 st.sidebar.markdown("---")
-st.sidebar.subheader("🧠 99% Multimodal Vision AI")
-st.sidebar.caption("Detect medicines, keys, currency, food, text & hazards with human-grade accuracy.")
+st.sidebar.subheader("🧠 Assistive Vision AI Core")
+st.sidebar.caption("High-accuracy object identification, distance, color & hazard alerts.")
 
 ai_provider = st.sidebar.selectbox(
-    "Vision AI Engine:",
-    ["Anthropic Claude (Recommended)", "Google Gemini"],
+    "Select AI Engine:",
+    [
+        "🟢 Built-in Free AI (No API Key Required)",
+        "✨ Google Gemini 1.5 Flash (100% Free API Key)",
+        "⚡ Anthropic Claude 3.5 Sonnet (Requires Key)"
+    ],
     index=0,
-    help="Claude 3.5 Sonnet provides 99%+ accuracy for any arbitrary real-world object, sign, or obstacle."
+    help="Select 'Built-in Free AI' to run locally with zero API keys and instant voice, or use Google Gemini for 100% free cloud vision."
 )
 
-api_key_env = os.environ.get("ANTHROPIC_API_KEY", "")
-try:
-    if not api_key_env and "ANTHROPIC_API_KEY" in st.secrets:
-        api_key_env = st.secrets["ANTHROPIC_API_KEY"]
-except Exception:
-    pass
+user_api_key = ""
+ai_model = "builtin-local"
 
-user_api_key = st.sidebar.text_input(
-    f"{ai_provider.split()[0]} API Key:",
-    value=api_key_env,
-    type="password",
-    help="Enter your API key. Kept securely in browser session memory and never persisted."
-)
+if "Built-in" in ai_provider:
+    st.sidebar.success("✅ **Zero-Key Mode Active**: Using local PyTorch YOLOv8, dominant color extraction & spatial engine. No external accounts or API keys needed!")
+    with st.sidebar.expander("💡 Want 100% Free Cloud Multimodal AI?"):
+        st.markdown("""
+        **Google Gemini 1.5 Flash** is completely free forever:
+        1. Visit [aistudio.google.com](https://aistudio.google.com/)
+        2. Sign in with any Google / Gmail account
+        3. Click **Get API key** (Zero cost, no credit card required)
+        4. Select *Google Gemini 1.5 Flash* above and paste your key!
+        """)
+elif "Gemini" in ai_provider:
+    api_key_env = os.environ.get("GEMINI_API_KEY", "")
+    try:
+        if not api_key_env and "GEMINI_API_KEY" in st.secrets:
+            api_key_env = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
 
-if ai_provider.startswith("Anthropic"):
+    user_api_key = st.sidebar.text_input(
+        "Google Gemini API Key (100% Free):",
+        value=api_key_env,
+        type="password",
+        help="Get your 100% free Gemini API key in 30 seconds at aistudio.google.com (no credit card required)."
+    )
+    ai_model = st.sidebar.selectbox("Gemini Model:", [GEMINI_FLASH, GEMINI_PRO], index=0)
+    st.sidebar.caption("👉 [Get a Free Gemini Key (Takes 30 seconds, No Credit Card)](https://aistudio.google.com/)")
+
+elif "Claude" in ai_provider:
+    api_key_env = os.environ.get("ANTHROPIC_API_KEY", "")
+    try:
+        if not api_key_env and "ANTHROPIC_API_KEY" in st.secrets:
+            api_key_env = st.secrets["ANTHROPIC_API_KEY"]
+    except Exception:
+        pass
+
+    user_api_key = st.sidebar.text_input(
+        "Anthropic API Key:",
+        value=api_key_env,
+        type="password",
+        help="Enter your Anthropic Claude API key from console.anthropic.com."
+    )
     ai_model = st.sidebar.selectbox("Claude Model:", [CLAUDE_SONNET, CLAUDE_HAIKU], index=0)
-else:
-    ai_model = st.sidebar.selectbox("Gemini Model:", [GEMINI_FLASH, "gemini-1.5-pro"], index=0)
 
 assistive_mode = st.sidebar.selectbox(
     "Assistive Focus Mode:",
     [
         "Comprehensive Scene & All Objects",
-        "Item & Clutter Finder (Keys, Medicine, Cards)",
+        "Item & Clutter Finder (Keys, Bottles, Devices)",
         "Walking Obstacles & Ground Hazards",
         "Read Signs & Medicine Labels (OCR)"
     ],
@@ -960,63 +991,48 @@ with tab_main:
             st.components.v1.html(live_cam_html, height=540)
 
             # ----------------------------------------------------------------------
-            # 99% MULTIMODAL VISION AI & DEEP INSPECTOR
+            # AI VISION SNAPSHOT INSPECTOR (ZERO-KEY & CLOUD MODES)
             # ----------------------------------------------------------------------
             st.markdown("---")
-            st.markdown("### 🧠 99% Multimodal Vision AI Inspector (Claude 3.5 Sonnet)")
+            st.markdown("### 🧠 Instant AI Vision Snapshot & Spoken Explainer")
             st.caption(
-                "Snap a frame from your camera to identify ANY real-world object, read fine text or medicine labels, and detect walking hazards with Claude 3.5 Sonnet (99% accuracy):"
+                "Snap a camera frame to get an immediate spoken breakdown of all objects, colors, clock positions, and walking hazards:"
             )
 
             c_mode1, c_mode2 = st.columns([2, 1])
             with c_mode1:
-                ai_engine_select = st.radio(
-                    "Deep Analysis Engine:",
-                    ["⚡ Anthropic Claude 3.5 Sonnet (99% Accuracy - Any Object / Text / Hazards)",
-                     "🔍 PyTorch YOLOv8 Nano (Fast 80-Class Bounding Boxes)"],
-                    index=0,
-                    horizontal=True
-                )
+                st.markdown(f"**Active Vision Engine:** `{ai_provider}`")
+                if "Built-in" in ai_provider:
+                    st.caption("🟢 Running Free Zero-Key Neural Vision (No API key needed)")
+                elif "Gemini" in ai_provider:
+                    st.caption("✨ Running Google Gemini 1.5 Flash (100% Free Multimodal Vision)")
+                else:
+                    st.caption("⚡ Running Anthropic Claude 3.5 Sonnet (Multimodal Vision)")
             with c_mode2:
                 custom_user_query = st.text_input(
-                    "Ask Claude Vision a specific question:",
-                    placeholder="e.g. Where are my keys? What does the medicine bottle say?",
-                    help="Claude Vision will answer your exact question about this camera frame."
+                    "Optional question about this view:",
+                    placeholder="e.g. What is in front of me? Any obstacles?",
+                    help="AI will inspect the frame and answer your question."
                 )
 
-            snap = st.camera_input("Capture frame for 99% Claude Vision analysis:", label_visibility="collapsed")
+            snap = st.camera_input("Capture frame for instant AI vision inspection & speech:", label_visibility="collapsed")
             if snap is not None:
                 file_bytes = np.asarray(bytearray(snap.read()), dtype=np.uint8)
                 raw_frame = cv2.imdecode(file_bytes, 1)
 
-                if "Claude" in ai_engine_select:
-                    with st.spinner("Analyzing frame with Claude 3.5 Sonnet Vision (identifying all objects, text & hazards)..."):
-                        claude_res = st.session_state.claude_agent.analyze_frame(
-                            raw_frame,
-                            assistive_mode=assistive_mode,
-                            custom_query=custom_user_query if custom_user_query else None
-                        )
-                        st.session_state.last_claude_result = claude_res
+                with st.spinner("Analyzing scene, colors, distances & hazards..."):
+                    vision_res = st.session_state.claude_agent.analyze_frame(
+                        raw_frame,
+                        assistive_mode=assistive_mode,
+                        custom_query=custom_user_query if custom_user_query else None
+                    )
+                    st.session_state.last_claude_result = vision_res
 
-                    spoken_msg = claude_res.get("spoken_alert", "")
-                    if spoken_msg and not mute_audio:
-                        play_browser_speech(spoken_msg, priority=1)
+                spoken_msg = vision_res.get("spoken_alert", "")
+                if spoken_msg and not mute_audio:
+                    play_browser_speech(spoken_msg, priority=1)
 
-                    render_claude_vision_card(claude_res, raw_frame)
-                else:
-                    processed_frame, img_meta = processor.process_frame(raw_frame, auto_enhance=auto_enhance_low_light)
-                    detections = detector.detect(processed_frame)
-                    h, w = processed_frame.shape[:2]
-                    scene_eval = alerts.evaluate_scene(detections, w, h)
-
-                    if not mute_audio:
-                        spoken = voice.process_detections(detections)
-                        if spoken and enable_browser_speech:
-                            play_browser_speech(spoken[0], priority=detections[0].get("priority", 3) if detections else 3)
-
-                    annotated = processor.draw_accessibility_annotations(processed_frame, detections)
-                    annotated_rgb = cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB)
-                    st.image(annotated_rgb, caption=f"YOLOv8 Results: Found {len(detections)} object(s)", channels="RGB", use_container_width=True)
+                render_claude_vision_card(vision_res, raw_frame)
 
         # ==========================================================================
         # CASE 2: LOCAL LAPTOP WEBCAM / TEST SCENES / UPLOADED VIDEO
@@ -1093,14 +1109,14 @@ with tab_main:
                 use_container_width=True
             )
 
-            # Option to run Claude Vision on idle frame
-            if st.button("⚡ Inspect This Scene with Claude 3.5 Sonnet (99% Accuracy)", use_container_width=True):
-                with st.spinner("Analyzing scene with Claude 3.5 Sonnet Vision..."):
-                    claude_res = st.session_state.claude_agent.analyze_frame(idle_frame, assistive_mode=assistive_mode)
-                    st.session_state.last_claude_result = claude_res
+            # Option to run AI Vision on idle frame
+            if st.button("⚡ Inspect This Scene with AI (Identifies All Objects & Speaks)", use_container_width=True):
+                with st.spinner("Analyzing scene, colors, distances & hazards..."):
+                    vision_res = st.session_state.claude_agent.analyze_frame(idle_frame, assistive_mode=assistive_mode)
+                    st.session_state.last_claude_result = vision_res
                     if not mute_audio:
-                        play_browser_speech(claude_res.get("spoken_alert", ""), priority=1)
-                    render_claude_vision_card(claude_res, idle_frame)
+                        play_browser_speech(vision_res.get("spoken_alert", ""), priority=1)
+                    render_claude_vision_card(vision_res, idle_frame)
 
     with col_feed:
         # Show Latest Claude Multimodal Vision Card in right feed if available
