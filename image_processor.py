@@ -94,8 +94,14 @@ class ImageProcessor:
         enhanced = False
 
         processed = frame.copy()
+        if hasattr(frame, "test_metadata"):
+            processed.test_metadata = frame.test_metadata
+
         if low_light and auto_enhance:
-            processed = self.enhance_low_light(processed)
+            enhanced_frame = self.enhance_low_light(processed)
+            if hasattr(frame, "test_metadata"):
+                enhanced_frame.test_metadata = frame.test_metadata
+            processed = enhanced_frame
             enhanced = True
 
         metadata = {

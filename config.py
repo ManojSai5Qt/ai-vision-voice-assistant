@@ -16,7 +16,7 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 
 # YOLO Detection Settings
 DEFAULT_MODEL = "yolov8n.pt"  # Lightweight nano model for real-time edge performance
-DEFAULT_CONFIDENCE = 0.50     # TC10: Filter uncertain predictions below 0.50
+DEFAULT_CONFIDENCE = 0.35     # Responsive confidence threshold (filters noise but easily detects common objects)
 DEFAULT_IOU_THRESHOLD = 0.45  # Non-maximum suppression threshold
 INPUT_FRAME_WIDTH = 640
 INPUT_FRAME_HEIGHT = 480
