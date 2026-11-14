@@ -153,29 +153,36 @@ st.sidebar.title("VisionVoice AI")
 st.sidebar.caption("Assistive Computer Vision for Visually Impaired")
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("🎥 Video Input Source")
+st.sidebar.subheader("🎥 Camera / Input Source")
 input_source_mode = st.sidebar.radio(
-    "Select Camera / Test Feed:",
+    "Select Camera / Feed Source:",
     [
-        "Live Webcam (Local)",
-        "Browser Camera (Streamlit Cloud / Mobile)",
-        "Hackathon Test Scenes (TC01 - TC05)",
-        "Upload Custom Image / Video"
+        "📸 Live Browser Camera (Streamlit Cloud & Phone)",
+        "💻 Local Webcam (Running Locally on Laptop)",
+        "🧪 Hackathon Test Scenes (TC01 - TC05)",
+        "📁 Upload Image / Video File"
     ],
-    index=2  # Default to Test Scenes so it works immediately out-of-the-box anywhere!
+    index=0  # Default to Live Browser Camera for instant access on Streamlit Cloud!
 )
 
 test_scene_choice = "tc01"
 uploaded_file = None
-browser_cam_file = None
+camera_index = 0
 
-if input_source_mode == "Live Webcam (Local)":
-    camera_index = st.sidebar.number_input("Camera Device Index", min_value=0, max_value=5, value=0, step=1)
-elif input_source_mode == "Browser Camera (Streamlit Cloud / Mobile)":
-    browser_cam_file = st.sidebar.camera_input("Take photo with your device camera")
-elif input_source_mode == "Hackathon Test Scenes (TC01 - TC05)":
+if input_source_mode.startswith("💻 Local Webcam"):
+    camera_index = st.sidebar.number_input(
+        "Camera Device Index (0 = Built-in Webcam):",
+        min_value=0,
+        max_value=5,
+        value=0,
+        step=1,
+        help="0 is your primary built-in webcam. 1 is an external USB camera."
+    )
+    st.sidebar.info("💡 Note: Local Webcam mode works when running locally on your laptop (`run.bat`). On Streamlit Cloud, choose 'Live Browser Camera'.")
+
+elif input_source_mode.startswith("🧪 Hackathon Test Scenes"):
     scene_label = st.sidebar.selectbox(
-        "Select Test Scenario:",
+        "Select Test Scenario for Viva Demo:",
         [
             "TC01: Single Object (Bottle on Table)",
             "TC02: Multiple Objects (Person, Chair, Bottle)",
@@ -185,7 +192,8 @@ elif input_source_mode == "Hackathon Test Scenes (TC01 - TC05)":
         ]
     )
     test_scene_choice = scene_label.split(":")[0].strip().lower()
-elif input_source_mode == "Upload Custom Image / Video":
+
+elif input_source_mode.startswith("📁 Upload Image / Video File"):
     uploaded_file = st.sidebar.file_uploader("Upload Image or MP4 Video", type=["jpg", "jpeg", "png", "mp4"])
 
 st.sidebar.markdown("---")
@@ -238,6 +246,14 @@ tab_main, tab_test_suite, tab_viva = st.tabs([
 # TAB 1: LIVE ASSISTIVE DETECTION
 # ==============================================================================
 with tab_main:
+    # Mode Banner
+    if input_source_mode.startswith("📸 Live Browser Camera"):
+        st.info("📸 **Live Browser Camera Mode Active**: Allow camera permission below, point your camera at objects (people, bottles, chairs, phones), and click 'Take Photo' to scan.")
+    elif input_source_mode.startswith("💻 Local Webcam"):
+        st.info("💻 **Local Laptop Webcam Mode Active**: Click 'START DETECTION' to stream continuously from your built-in webcam (Device 0).")
+    elif input_source_mode.startswith("🧪 Hackathon Test Scenes"):
+        st.info("🧪 **Hackathon Test Scenarios Active**: Click 'START DETECTION' to run simulated camera test scenes (TC01-TC05) for viva judging.")
+
     col_controls, col_status = st.columns([2, 1])
 
     with col_controls:
@@ -265,7 +281,7 @@ with tab_main:
     # Spatial Navigation Guidance Banner
     guidance_placeholder = st.empty()
     guidance_placeholder.markdown(
-        """<div class='guidance-banner-info'>✅ Path status: Ready. Click 'Start Detection' to begin scanning.</div>""",
+        """<div class='guidance-banner-info'>✅ Path status: Ready. Point camera or click 'Start Detection' to begin scanning.</div>""",
         unsafe_allow_html=True
     )
 
@@ -282,19 +298,91 @@ with tab_main:
         st.markdown("### 📋 Detected Objects Matrix")
         table_placeholder = st.empty()
 
-    # --- Video & Detection Execution Loop ---
-    if st.session_state.detection_active:
+    # --- Case 1: Browser Camera Input (Streamlit Cloud / Web Browser) ---
+    if input_source_mode.startswith("📸 Live Browser Camera"):
+        with col_video:
+            browser_pic = st.camera_input("📷 Real-time Device Camera Viewport:")
+            if browser_pic is not None:
+                file_bytes = np.asarray(bytearray(browser_pic.read()), dtype=np.uint8)
+                raw_frame = cv2.imdecode(file_bytes, 1)
+
+                # 1. Image Processing & Low-Light Enhancement (TC05)
+                processed_frame, img_meta = processor.process_frame(raw_frame, auto_enhance=auto_enhance_low_light)
+
+                # 2. YOLO Object Detection with Confidence Filter (TC10)
+                detections = detector.detect(processed_frame)
+
+                # 3. Spatial & Proximity Alert Evaluation
+                h, w = processed_frame.shape[:2]
+                scene_eval = alerts.evaluate_scene(detections, w, h)
+
+                # 4. Voice Announcements (TC07 & TC08 Cooldown)
+                spoken_items = []
+                if not mute_audio:
+                    spoken_items = voice.process_detections(detections)
+                    if spoken_items and enable_browser_speech:
+                        play_browser_speech(spoken_items[0])
+
+                # 5. High-contrast Accessibility Annotations
+                annotated_frame = processor.draw_accessibility_annotations(
+                    processed_frame,
+                    detections,
+                    show_distance=True,
+                    show_direction=True
+                )
+
+                # 6. Render UI Guidance Banner
+                g_level = scene_eval["guidance_level"]
+                g_text = scene_eval["navigation_guidance"]
+                banner_html = f"<div class='guidance-banner-{g_level}'>{g_text}</div>"
+                guidance_placeholder.markdown(banner_html, unsafe_allow_html=True)
+
+                # 7. Render Video Frame
+                annotated_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+                video_placeholder.image(annotated_rgb, caption="AI Object Detection Result", channels="RGB", use_container_width=True)
+
+                # 8. Render Telemetry Bar
+                lum_badge = f"{img_meta['luminance']} lux"
+                if img_meta["is_low_light"]:
+                    lum_badge += " 🌙 [LOW LIGHT - CLAHE ENHANCED]"
+                telemetry_placeholder.markdown(
+                    f"**Telemetry:** Illumination: `{lum_badge}` | "
+                    f"Detections: `{len(detections)}` | Ahead: `{scene_eval['obstacle_counts']['ahead']}` | "
+                    f"Left: `{scene_eval['obstacle_counts']['left']}` | Right: `{scene_eval['obstacle_counts']['right']}`"
+                )
+
+                # 9. Render Spoken Audio Feed
+                recent_speech = voice.get_recent_history(count=5)
+                feed_html = ""
+                for item in reversed(recent_speech):
+                    feed_html += f"<div class='speech-bubble'><b>[{item['time']}]</b> 🗣️ {item['text']}</div>"
+                if not feed_html:
+                    feed_html = "<div class='speech-bubble'><i>Listening for new objects...</i></div>"
+                audio_feed_placeholder.markdown(feed_html, unsafe_allow_html=True)
+
+                # 10. Render Detections Matrix Table
+                if detections:
+                    table_data = []
+                    for d in detections:
+                        table_data.append({
+                            "Object": d["class_name"].capitalize(),
+                            "Confidence": f"{int(d['confidence'] * 100)}%",
+                            "Spatial Zone": d.get("spatial_position", "ahead"),
+                            "Proximity": d.get("distance_category", "Moderate"),
+                            "Priority": f"P{d.get('priority', 3)}"
+                        })
+                    table_placeholder.dataframe(table_data, use_container_width=True)
+                else:
+                    table_placeholder.info("TC03: No objects detected. Scene is clear.")
+
+    # --- Case 2: Continuous Video Loop (Local Webcam / Test Scenes / Uploaded Video) ---
+    elif st.session_state.detection_active:
         # Initialize video stream
-        if input_source_mode == "Live Webcam (Local)":
+        if input_source_mode.startswith("💻 Local Webcam"):
             stream = CameraStream(source_type="webcam", device_index=camera_index)
-        elif input_source_mode == "Browser Camera (Streamlit Cloud / Mobile)" and browser_cam_file is not None:
-            file_bytes = np.asarray(bytearray(browser_cam_file.read()), dtype=np.uint8)
-            img_cv = cv2.imdecode(file_bytes, 1)
-            stream = CameraStream(source_type="test_scene_tc01")
-            stream.generate_synthetic_test_frame = lambda _: img_cv
-        elif input_source_mode == "Hackathon Test Scenes (TC01 - TC05)":
+        elif input_source_mode.startswith("🧪 Hackathon Test Scenes"):
             stream = CameraStream(source_type=f"test_scene_{test_scene_choice}")
-        elif input_source_mode == "Upload Custom Image / Video" and uploaded_file is not None:
+        elif input_source_mode.startswith("📁 Upload Image / Video File") and uploaded_file is not None:
             # Save uploaded file temporarily
             temp_path = os.path.join(ASSETS_DIR, f"temp_upload_{uploaded_file.name}")
             with open(temp_path, "wb") as f:
