@@ -756,7 +756,14 @@ def build_live_browser_camera_html(cooldown_s: float, conf_thresh: float, muted:
         var streamObj = null;
 
         var lastSpokenTime = {};
-        var recentTracks = {};
+        var lastSceneNarrationTime = 0;
+        var isContinuousNarratorActive = true;
+
+        // Hidden canvas to sample pixels for color extraction
+        var sampleCanvas = document.createElement('canvas');
+        sampleCanvas.width = 16;
+        sampleCanvas.height = 16;
+        var sampleCtx = sampleCanvas.getContext('2d');
 
         function startCamera() {
             if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
@@ -788,14 +795,14 @@ def build_live_browser_camera_html(cooldown_s: float, conf_thresh: float, muted:
         }
 
         function loadCocoModel() {
-            aiStatusPill.innerText = "🧠 Loading 80-Class COCO AI...";
+            aiStatusPill.innerText = "🧠 Initializing Live Neural AI Core...";
             aiStatusPill.style.color = "#f59e0b";
             if (window.cocoSsd) {
                 cocoSsd.load().then(function(loadedModel) {
                     model = loadedModel;
-                    aiStatusPill.innerText = "🟢 AI Model Active (80 Classes)";
+                    aiStatusPill.innerText = "🟢 Live AI Perception Active (Colors + Clocks + Distance)";
                     aiStatusPill.style.color = "#10b981";
-                    speakAlert("VisionVoice AI connected. Ready to identify all 80 object classes.", 2);
+                    speakAlert("VisionVoice AI live camera perception active. Colors, positions, and objects enabled.", 2);
                     detectLoop();
                 }).catch(function(err) {
                     startFallbackLoop();
@@ -819,6 +826,37 @@ def build_live_browser_camera_html(cooldown_s: float, conf_thresh: float, muted:
             });
         }
 
+        function extractDominantColor(bx, by, bw, bh) {
+            try {
+                if (bw < 10 || bh < 10) return "";
+                sampleCtx.drawImage(video, bx, by, bw, bh, 0, 0, 16, 16);
+                var imgData = sampleCtx.getImageData(0, 0, 16, 16).data;
+                var r = 0, g = 0, b = 0, count = 0;
+                for (var i = 0; i < imgData.length; i += 4) {
+                    r += imgData[i];
+                    g += imgData[i+1];
+                    b += imgData[i+2];
+                    count++;
+                }
+                r = r / count; g = g / count; b = b / count;
+                var max = Math.max(r, g, b), min = Math.min(r, g, b);
+                var brightness = max;
+                var sat = max === 0 ? 0 : (max - min) / max;
+
+                if (brightness < 45) return "black";
+                if (sat < 0.18 && brightness > 180) return "white";
+                if (sat < 0.22) return "gray";
+
+                if (r > g + 28 && r > b + 28) return "red";
+                if (b > r + 18 && b > g + 18) return "blue";
+                if (g > r + 18 && g > b + 18) return "green";
+                if (r > 150 && g > 130 && b < 100) return "yellow";
+                if (r > 160 && g > 80 && b < 60) return "orange";
+                if (r > 90 && b > 90 && g < 80) return "purple";
+            } catch(e) {}
+            return "";
+        }
+
         function renderDetections(predictions) {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             var now = Date.now() / 1000;
@@ -826,16 +864,18 @@ def build_live_browser_camera_html(cooldown_s: float, conf_thresh: float, muted:
             var h = canvas.height;
 
             var inViewBadges = [];
+            var sceneObjects = [];
+            var immediateHazard = null;
 
             predictions.forEach(function(p) {
                 if (p.score < minConfidence) return;
 
                 var label = p.class.toLowerCase();
                 var bbox = p.bbox;
-                var bx = bbox[0];
-                var by = bbox[1];
-                var bw = bbox[2];
-                var bh = bbox[3];
+                var bx = Math.max(0, bbox[0]);
+                var by = Math.max(0, bbox[1]);
+                var bw = Math.min(w - bx, bbox[2]);
+                var bh = Math.min(h - by, bbox[3]);
 
                 var cx = bx + bw / 2;
                 var cy = by + bh / 2;
@@ -843,32 +883,60 @@ def build_live_browser_camera_html(cooldown_s: float, conf_thresh: float, muted:
                 var normY = cy / h;
                 var heightRatio = bh / h;
 
-                var position = "directly ahead";
-                if (normX < 0.35) position = "on your left";
-                else if (normX > 0.65) position = "on your right";
+                // Color extraction directly from live frame
+                var colorName = extractDominantColor(bx, by, bw, bh);
+                var fullLabel = colorName ? (colorName + " " + label) : label;
 
-                var distance = "moderate distance";
-                if (heightRatio > 0.40) distance = "close distance";
-                else if (heightRatio < 0.15) distance = "distant";
-
-                var color = "#38bdf8";
-                if (label === 'bottle' || label === 'cup' || label === 'cell phone' || label === 'laptop') {
-                    color = "#f59e0b";
-                } else if (label === 'chair' || label === 'couch' || label === 'dining table') {
-                    color = "#3b82f6";
-                } else if (label === 'person') {
-                    color = "#10b981";
+                // Precise clock-face positioning
+                var clockPosition = "at 12 o'clock directly ahead";
+                var sidePos = "directly ahead";
+                if (normX < 0.28) {
+                    clockPosition = "at 10 o'clock on your left";
+                    sidePos = "on your left";
+                } else if (normX < 0.42) {
+                    clockPosition = "at 11 o'clock ahead-left";
+                    sidePos = "ahead-left";
+                } else if (normX > 0.72) {
+                    clockPosition = "at 2 o'clock on your right";
+                    sidePos = "on your right";
+                } else if (normX > 0.58) {
+                    clockPosition = "at 1 o'clock ahead-right";
+                    sidePos = "ahead-right";
                 }
 
+                // Distance estimation in human steps & feet
+                var distance = "4 feet away";
+                var isClose = false;
+                if (heightRatio > 0.42) {
+                    distance = "arm's reach (<1m)";
+                    isClose = true;
+                    if (normX >= 0.30 && normX <= 0.70) {
+                        immediateHazard = fullLabel + " directly in walking path, 1 step ahead";
+                    }
+                } else if (heightRatio > 0.25) {
+                    distance = "2 steps away";
+                } else if (heightRatio < 0.12) {
+                    distance = "across the room";
+                }
+
+                // Accessible colors for bounding boxes
+                var boxColor = "#38bdf8";
+                if (colorName === 'red') boxColor = "#ef4444";
+                else if (colorName === 'blue') boxColor = "#3b82f6";
+                else if (colorName === 'green') boxColor = "#10b981";
+                else if (colorName === 'yellow' || colorName === 'orange') boxColor = "#f59e0b";
+                else if (label === 'person') boxColor = "#10b981";
+                else if (label === 'bottle' || label === 'cup' || label === 'cell phone' || label === 'laptop') boxColor = "#f59e0b";
+
                 // Draw bounding box
-                ctx.strokeStyle = color;
+                ctx.strokeStyle = boxColor;
                 ctx.lineWidth = 3;
                 ctx.strokeRect(bx, by, bw, bh);
 
-                // Draw label box
-                ctx.fillStyle = color;
+                // Draw label badge
+                ctx.fillStyle = boxColor;
                 var scorePct = Math.round(p.score * 100);
-                var text = label.toUpperCase() + " " + scorePct + "% • " + position;
+                var text = fullLabel.toUpperCase() + " • " + clockPosition.replace("directly ", "");
                 ctx.font = "bold 13px 'Space Grotesk', sans-serif";
                 var textWidth = ctx.measureText(text).width;
                 ctx.fillRect(bx, by - 24 > 0 ? by - 24 : by, textWidth + 12, 22);
@@ -876,25 +944,44 @@ def build_live_browser_camera_html(cooldown_s: float, conf_thresh: float, muted:
                 ctx.fillStyle = "#000";
                 ctx.fillText(text, bx + 6, by - 24 > 0 ? by - 8 : by + 16);
 
-                inViewBadges.push(label + " (" + position + " " + scorePct + "%)");
-
-                // Speech alert dispatch with cooldown
-                var key = label + "_" + position;
-                var lastSpoken = lastSpokenTime[key] || 0;
-                var cooldown = cooldownSeconds;
-
-                if (now - lastSpoken > cooldown) {
-                    lastSpokenTime[key] = now;
-                    var sentence = label + " " + position + ", " + distance;
-                    guidanceBox.innerText = "🗣️ " + sentence;
-                    speakAlert(sentence, 2);
-                }
+                inViewBadges.push(fullLabel + " (" + sidePos + " " + scorePct + "%)");
+                sceneObjects.push({ label: fullLabel, clock: clockPosition, dist: distance });
             });
 
+            // Live Walking Corridor indicator line on bottom
+            ctx.strokeStyle = immediateHazard ? "rgba(239, 68, 68, 0.6)" : "rgba(16, 185, 129, 0.4)";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(w * 0.30, h * 0.60, w * 0.40, h * 0.38);
+
+            // Update HUD text
             if (inViewBadges.length > 0) {
                 detectedItemsSummary.innerText = "In View (" + inViewBadges.length + "): " + inViewBadges.slice(0, 5).join(" • ");
             } else {
                 detectedItemsSummary.innerText = "In View: Clean floor ahead. Point camera at any object to identify.";
+            }
+
+            // Continuous AI Voice Narrator dispatch
+            if (now - lastSceneNarrationTime > cooldownSeconds) {
+                if (immediateHazard) {
+                    lastSceneNarrationTime = now;
+                    var hazardAlert = "Caution! " + immediateHazard;
+                    guidanceBox.innerText = "⚠️ " + hazardAlert;
+                    guidanceBox.style.background = "#7f1d1d";
+                    speakAlert(hazardAlert, 1);
+                } else if (sceneObjects.length > 0) {
+                    lastSceneNarrationTime = now;
+                    var sentence = "";
+                    if (sceneObjects.length === 1) {
+                        sentence = sceneObjects[0].label + " " + sceneObjects[0].clock + ", " + sceneObjects[0].dist;
+                    } else if (sceneObjects.length === 2) {
+                        sentence = sceneObjects[0].label + " " + sceneObjects[0].clock + ", and " + sceneObjects[1].label + " " + sceneObjects[1].clock;
+                    } else {
+                        sentence = sceneObjects[0].label + " " + sceneObjects[0].clock + ", " + sceneObjects[1].label + ", and " + (sceneObjects.length - 2) + " other objects in view";
+                    }
+                    guidanceBox.innerText = "🗣️ " + sentence;
+                    guidanceBox.style.background = "#064e3b";
+                    speakAlert(sentence, 2);
+                }
             }
         }
 
@@ -927,7 +1014,11 @@ def build_live_browser_camera_html(cooldown_s: float, conf_thresh: float, muted:
         }
 
         function testSpeech() {
-            speakAlert("VisionVoice AI audio synthesizer is fully operational. All 80 categories active.", 1);
+            speakAlert("VisionVoice AI live camera perception is active. Announcing colors, clock positions, and distances.", 1);
+        }
+
+        startCamera();
+    </script>
         }
 
         startCamera();
