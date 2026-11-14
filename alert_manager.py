@@ -52,14 +52,10 @@ class AlertManager:
             if c_name == "person":
                 people_in_path.append(det)
 
-            # In Street Walking mode, filter out small desk items from collision alerts
-            if mode == "street_walking" and c_name in HANDHELD_DESK_OBJECTS:
-                continue
-
             # Ground Footpath Corridor: obstacle must reach lower 55% of the frame to be a trip hazard
-            is_ground_obstacle = (bottom_y / max(1, frame_height)) >= 0.45
+            is_ground_obstacle = (bottom_y / max(1, frame_height)) >= 0.40
 
-            if dist == "Immediate" and is_ground_obstacle and (c_name in GROUND_COLLISION_HAZARDS or mode != "street_walking"):
+            if dist == "Immediate" and is_ground_obstacle:
                 immediate_threats.append(det)
 
             if "ahead" in s_pos:

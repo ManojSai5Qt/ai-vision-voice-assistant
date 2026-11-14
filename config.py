@@ -16,7 +16,7 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 
 # YOLO Detection Settings
 DEFAULT_MODEL = "yolov8n.pt"  # Lightweight nano model for real-time edge performance
-DEFAULT_CONFIDENCE = 0.50     # Balanced precision threshold to eliminate false positives in real-world environments
+DEFAULT_CONFIDENCE = 0.30     # Responsive sensitivity to detect common everyday items (bottles, phones, cups, chairs)
 DEFAULT_IOU_THRESHOLD = 0.45  # Non-maximum suppression threshold
 INPUT_FRAME_WIDTH = 640
 INPUT_FRAME_HEIGHT = 480
@@ -56,7 +56,7 @@ MEDIUM_PRIORITY_CLASSES = {
 
 # Voice & Announcement Settings
 DEFAULT_SPEECH_RATE = 165     # Words per minute for pyttsx3 (clear & intelligible)
-DEFAULT_COOLDOWN_SECONDS = 6.0  # TC08: Stable debounce window preventing repetitive chatter while walking
+DEFAULT_COOLDOWN_SECONDS = 4.0  # TC08: Balanced cooldown preventing audio spam while allowing quick new announcements
 SPEECH_QUEUE_MAX_SIZE = 10
 
 # Proximity & Distance Thresholds (Normalized bbox height/area relative to frame)
