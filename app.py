@@ -157,18 +157,22 @@ st.sidebar.subheader("🎥 Video Input Source")
 input_source_mode = st.sidebar.radio(
     "Select Camera / Test Feed:",
     [
-        "Live Webcam",
+        "Live Webcam (Local)",
+        "Browser Camera (Streamlit Cloud / Mobile)",
         "Hackathon Test Scenes (TC01 - TC05)",
         "Upload Custom Image / Video"
     ],
-    index=1  # Default to Test Scenes so it works immediately out-of-the-box anywhere!
+    index=2  # Default to Test Scenes so it works immediately out-of-the-box anywhere!
 )
 
 test_scene_choice = "tc01"
 uploaded_file = None
+browser_cam_file = None
 
-if input_source_mode == "Live Webcam":
+if input_source_mode == "Live Webcam (Local)":
     camera_index = st.sidebar.number_input("Camera Device Index", min_value=0, max_value=5, value=0, step=1)
+elif input_source_mode == "Browser Camera (Streamlit Cloud / Mobile)":
+    browser_cam_file = st.sidebar.camera_input("Take photo with your device camera")
 elif input_source_mode == "Hackathon Test Scenes (TC01 - TC05)":
     scene_label = st.sidebar.selectbox(
         "Select Test Scenario:",
@@ -281,8 +285,13 @@ with tab_main:
     # --- Video & Detection Execution Loop ---
     if st.session_state.detection_active:
         # Initialize video stream
-        if input_source_mode == "Live Webcam":
+        if input_source_mode == "Live Webcam (Local)":
             stream = CameraStream(source_type="webcam", device_index=camera_index)
+        elif input_source_mode == "Browser Camera (Streamlit Cloud / Mobile)" and browser_cam_file is not None:
+            file_bytes = np.asarray(bytearray(browser_cam_file.read()), dtype=np.uint8)
+            img_cv = cv2.imdecode(file_bytes, 1)
+            stream = CameraStream(source_type="test_scene_tc01")
+            stream.generate_synthetic_test_frame = lambda _: img_cv
         elif input_source_mode == "Hackathon Test Scenes (TC01 - TC05)":
             stream = CameraStream(source_type=f"test_scene_{test_scene_choice}")
         elif input_source_mode == "Upload Custom Image / Video" and uploaded_file is not None:
